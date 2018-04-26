@@ -1,0 +1,127 @@
+---
+title: "Question 3 - Analysis of A/B Testing Results"
+output:
+  html_document: default
+  html_notebook: default
+  pdf_document: default
+name: Rob Osterburg
+---
+## Questions
+There are four questions I would ask about the A/B testing and how it was performed.
+
+1. In addition to the A/B tests, was an A/A test run to check for issues with the studies' methodology?  I will assume that the answer is 'yes' and that the A/A testing did not reveal any problems with the study. 
+
+2. Would a user who revisits the site during the experiment be consistently directed to the same quote form?  Again, I will assume the answer is 'yes' and am re-assured that this source of bias has been addressed. 
+
+3. How are the test data distributed?  For example, knowing its spread, skewness and modality would all be helpful and would improve my ability to accurately model them.  I will assume the that the probability distribution of the baseline data are narrowly distributed.
+
+4. Was the study originally planned to run for one week, or was it cut short?  Did you gather the sample size that you had originally intended?  I will assume that it ran its full course and that a more than adequate number of samples were gathered.  
+
+## Problem Solving Approach
+Having never analyzed a set of A/B or multivariate testing results before, I looked into available methods focusing on understanding their strengths and weaknesses.  A/B testing is a form of statistical hypothesis testing.  Hypothesis tests assume a particular distribution for the data.  For analyzing click-through-rates, where each trail results in either a success or a failure the binomial distribution is a perfect match. So, what hypothesis tests are appropriate for binomially distributed data. Here is what I found.
+
+1. Chi-Squared test(see http://www.evanmiller.org/announcing-evans-awesome-ab-tools.html)
+
+2. Bayesian methods for AB testing(see https://github.com/FrankPortman/bayesAB)
+
+I chose the Bayesian approach for two reasons:
+
+1. The Bayesian approach produces direct probability values of success that are easy to interpret and easy to explain to others.  Frequentest tests methods produce p-values whose meaning that are easy to misinterpret and difficult to explain.  I think this is a distinct advantage for the Bayesian approach especially when communicating results to decision makers and other non-data scientists.  A disadvantage of the Bayesian approach is that you need to select a prior distribution, but this is not an issues here because we have a good set of baseline data and we know it is binomially distributed.   
+
+2. The Bayesian approach avoids the problem of "peeking" -- frequently checking the results of an ongoing test -- and stopping the test when a "significant" result is found. The significance level is only valid for for the designed sample size and is invalided if it is calculated before that number of samples are gathered.  Ultimately, peeking results in false positive test results, since once a positive result is thought to have occurred, no more samples are gathered, invalidating the study due to the inadequate sample size. This problem can be avoided by not checking the results early but curiosity is only natural.  You can design a sequential experiment where it is okay to check as the sample size hits previously determined sizes.  The Bayesian approach is believed to be immune to the problem (see http://www.evanmiller.org/how-not-to-run-an-ab-test.html) and it is a topic of active discussion among practitioners (http://variance explained.org/r/bayesian-ab-testing/). 
+
+
+```{r load-packages, message=FALSE}
+library(bayesAB)
+```
+##Solution
+### Baseline Response Rate
+The baseline response rate is ~5.4%.  
+```{r}
+n_base = 595
+p_base = 32/n_base
+p_base
+```
+
+### Estimating the Prior Distribution
+*For Bayesian methods to function at thier best, you need to know -- or being willing to guess -- how your data are distributed.  In Bayesian statistics this is called picking your prior probability distribution, or simply, your priors.  I will use the baseline probability values to estimate my priors using a beta function.  The values in a beta distribution are between 0 and 1 and are perfect for modeling probabilities.  (see http://fportman.com/blog/bayesab-0-dot-7-0-plus-a-primer-on-priors/).  The bayesAB package for R allows me to use a easily plot my estimated priors.*
+
+```{r}
+plotBeta(12, 200)
+```
+
+### Service Provider Reponse Rates
+Let's calculate the probabilities of a service provider making a bid for the four variations of the new web page that we are testing.
+```{r}
+n_var1 = 599
+n_var2 = 622
+n_var3 = 606
+n_var4 = 578
+p_var1 = 30/n_var1
+p_var2 = 18/n_var2
+p_var3 = 51/n_var3
+p_var4 = 38/n_var4 
+p_values = c(p_var1, p_var2, p_var3, p_var4)
+p_values
+```
+
+### Binomial Modeling of the Response Rates 
+Next, I will simulate probability distribution for each variation and the baseline using the binomial distribution.
+```{r}
+binom_base = rbinom(n_base, 1, p_base)
+binom_var1 = rbinom(n_var1, 1, p_var1)
+binom_var2 = rbinom(n_var2, 1, p_var2)
+binom_var3 = rbinom(n_var3, 1, p_var3)
+binom_var4 = rbinom(n_var4, 1, p_var4)
+```
+
+### Fit the Bayesian Model
+Now let's fit a Bayesian model to the baseline and comparing it to each variation.  In these simulations, the baseline is A and the variation is B.  All simulations use the same set of priors and assume a binomial distribution.  What changes is the binomial model for each of the variations.  I use a naming convention to keep all the results straight.  
+```{r}
+estimated_priors = c('alpha'=12, 'beta'=200)
+dist = 'bernoulli'
+AB_base_vs_var1 = bayesTest(binom_base, binom_var1, priors = estimated_priors, distribution = dist)
+AB_base_vs_var2 = bayesTest(binom_base, binom_var2, priors = estimated_priors, distribution = dist)
+AB_base_vs_var3 = bayesTest(binom_base, binom_var3, priors = estimated_priors, distribution = dist)
+AB_base_vs_var4 = bayesTest(binom_base, binom_var4, priors = estimated_priors, distribution = dist)
+
+```
+##Results
+### Variation 1 vs Baseline
+```{r}
+plot(AB_base_vs_var1, priors = FALSE)
+summary(AB_base_vs_var1)
+```
+
+### Variation 2 vs Baseline
+```{r}
+plot(AB_base_vs_var2, priors = FALSE)
+summary(AB_base_vs_var2)
+```
+
+### Variation 3 vs Baseline
+```{r}
+plot(AB_base_vs_var3, priors = FALSE)
+summary(AB_base_vs_var3)
+```
+
+### Variation 4 vs Baseline
+```{r}
+plot(AB_base_vs_var4, priors = FALSE)
+summary(AB_base_vs_var4)
+```
+
+## Conclusion
+The posterior distributions are probabilistic estimates of the uncertainty contained in the baseline and each of the variations.  The more the posterior baseline and variation distributions overlap the lower the probability that there is a significant difference between them.  Here is my analysis of the effectiveness of each variation of the quote form.
+
+1. Variation 1 is predicted to have less than a 50% probability of being better than the baseline. Recommendation: Reject
+
+2. Variation 2 is predicted to have less than 5% probability of being better than the baseline.  Recommendation: Reject
+
+3. **Variation 3 is predicted to have a more than 95% probability of being better than baseline. Its modeled bid acceptance rate of 10% represents is double the baseline rate.  Recommendation: Accept**
+
+4. Variation 4 is predicted to have a roughly 50% probability of being better -- or worse -- than baseline.  Conclusion: Reject
+
+
+
+
